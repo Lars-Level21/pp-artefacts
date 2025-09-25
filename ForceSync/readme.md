@@ -1,7 +1,7 @@
 ForceSync is a lightweight solution to sync Users between Entra and Dataverse, sync the memberships of Entra ID security groups and linked Dataverse teams and move of users to the proper Business Unit in Dataverse.
 
 # Initial Situation:  
-We want to use Entra ID Security Groups to manage access control to Dataverse. Therefore Entzra ID Security Groups are linked to Dataverse teams. Users in Dataverse do not get any security roles directly assigned. Roles are only assigned to Dataverse Teams. Furthermore every user only belongs to synced Dataverse teams which belong to the same Business Unit in Dataverse. 
+We want to use Entra ID Security Groups to manage access control to Dataverse. Therefore Entra ID Security Groups are linked to Dataverse teams. Users in Dataverse do not get any security roles directly assigned. Roles are only assigned to Dataverse Teams. Furthermore every user only belongs to synced Dataverse teams which belong to the same Business Unit in Dataverse. 
 
 ```mermaid
 flowchart LR
