@@ -50,8 +50,8 @@ We use Cloud Flows to
 - move the user to the Business Unit of the first Dataverse team he is member of and which is synced with an Entra ID Security Group
 
 ## User / manually / force sync and move user to the proper business unit
-```mermaid
 
+```mermaid
 flowchart TD
     A([Manual Trigger])
     B([Compose - environmentid])
@@ -59,14 +59,20 @@ flowchart TD
     D([Get group members - environment security group])
     E([Select - group member id])
     F([List rows - all Entra Group synced teams])
-    G([For each Entra security group ])
-    H([Get group members])
-    I([For each group member])
-    J([Filter: Is Entra ID group member also member in environment security group?])
-    K([Condition: Is member also in environment security group?])
-    L([Force Sync user to Dataverse])
-    M([For each team member])
-    N([Perform bound action - force sync of team members])
+
+    subgraph ForEachEntraSecurityGroup [For each Entra security group]
+        G([Get group members])
+        subgraph ForEachGroupMember [For each group member]
+            H([Filter: compare group member with members of security group])
+            I([Condition: group member is also member of security group])
+            J([Force Sync user to Dataverse])
+        end
+    end
+
+    subgraph ForEachTeamMember [For each team member]
+        K([Perform bound action - force sync of team members])
+    end
+    
     O([Child Flow - move user to owning business unit of found team])
 
     A --> B
@@ -74,17 +80,15 @@ flowchart TD
     C --> D
     D --> E
     E --> F
-    F --> G
-    G --> H
-    H --> I
-    I --> J
-    J --> K
-    K -- Yes --> L
-    L --> M
-    M --> N
-    K -- No --> M
-    N --> O
+    F --> ForEachEntraSecurityGroup
+    ForEachEntraSecurityGroup --> ForEachTeamMember
 
+    G --> ForEachGroupMember
+    H --> I
+    I -- Yes --> J
+    I -- No --> ForEachTeamMember
+    J --> ForEachTeamMember
+    ForEachTeamMember --> O
 ```
 
 ## Child Flow / move user to owning business unit of his team
@@ -93,15 +97,15 @@ flowchart TD
 flowchart TD
     A([Manual Trigger])
     B([List rows - active users belonging to Entra ID group synced teams])
-    C([For each user])
-    D([List rows - Entra ID Group synced teams of the user])
-    E([Condition: user is not in the proper business unit])
-    F([Update user: move to the proper business unit])
+    subgraph ForEachUser [For each user]
+        D([List rows - Entra ID Group synced teams of the user])
+        E([Condition: user is not in the proper business unit])
+        F([Update user: move to the proper business unit])
+    end
     G([Respond to Power App or flow])
 
     A --> B
-    B --> C
-    C --> D
+    B --> ForEachUser
     D --> E
     E -- Yes --> F
     E -- No --> G
