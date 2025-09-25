@@ -1,0 +1,153 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "api": {
+          "name": "shared_commondataserviceforapps"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "lvl_dataverse"
+        },
+        "runtimeSource": "embedded"
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        }
+      },
+      "triggers": {
+        "manual": {
+          "type": "Request",
+          "kind": "Button",
+          "inputs": {
+            "schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          "metadata": {
+            "operationMetadataId": "65b56df5-a240-4b9c-8a8b-ab14d948f474"
+          }
+        }
+      },
+      "actions": {
+        "List_rows_-_active_users_belonging_to_Entra_Id_group_synced_teams": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "entityName": "systemusers",
+              "$select": "_businessunitid_value,systemuserid,fullname",
+              "$filter": "(isdisabled eq false) and (teammembership_association/any(o1:(o1/azureactivedirectoryobjectid ne null)))",
+              "$expand": "teammembership_association($select=teamid;$filter=(azureactivedirectoryobjectid ne null))"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+              "operationId": "ListRecords",
+              "connectionName": "shared_commondataserviceforapps"
+            }
+          },
+          "runAfter": {}
+        },
+        "For_each": {
+          "type": "Foreach",
+          "foreach": "@outputs('List_rows_-_active_users_belonging_to_Entra_Id_group_synced_teams')?['body/value']",
+          "actions": {
+            "List_rows_-_Entra_Id_Group_synced_teams_of_the_user": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "entityName": "teams",
+                  "fetchXml": "<fetch top=\"1\">\n  <entity name=\"team\">\n    <attribute name=\"businessunitid\" />\n    <filter>\n      <condition attribute=\"azureactivedirectoryobjectid\" operator=\"not-null\" />\n    </filter>\n    <link-entity name=\"teammembership\" from=\"teamid\" to=\"teamid\">\n      <filter>\n        <condition attribute=\"systemuserid\" operator=\"eq\" value=\"@{item()?['systemuserid']}\" />\n      </filter>\n    </link-entity>\n  </entity>\n</fetch>"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                  "operationId": "ListRecords",
+                  "connectionName": "shared_commondataserviceforapps"
+                }
+              }
+            },
+            "Condition_-_user_is_not_in_the_proper_business_unit": {
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "not": {
+                      "equals": [
+                        "@outputs('List_rows_-_Entra_Id_Group_synced_teams_of_the_user')?['body/value']?[0]?['_businessunitid_value']",
+                        "@item()?['_businessunitid_value']"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "actions": {
+                "Update_a_row_-_move_user_to_the_proper_business_unit": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "entityName": "systemusers",
+                      "recordId": "@item()?['systemuserid']",
+                      "item/businessunitid@odata.bind": "businessunits(@{outputs('List_rows_-_Entra_Id_Group_synced_teams_of_the_user')?['body/value']?[0]?['_businessunitid_value']})"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "UpdateOnlyRecord",
+                      "connectionName": "shared_commondataserviceforapps"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "runAfter": {
+                "List_rows_-_Entra_Id_Group_synced_teams_of_the_user": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "runAfter": {
+            "List_rows_-_active_users_belonging_to_Entra_Id_group_synced_teams": [
+              "Succeeded"
+            ]
+          },
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 50
+            }
+          }
+        },
+        "Respond_to_a_Power_App_or_flow": {
+          "type": "Response",
+          "kind": "PowerApp",
+          "inputs": {
+            "schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": {}
+            },
+            "statusCode": 200
+          },
+          "runAfter": {
+            "For_each": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}

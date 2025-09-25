@@ -1,0 +1,277 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "api": {
+          "name": "shared_commondataserviceforapps"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "lvl_dataverse"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_azuread": {
+        "api": {
+          "name": "shared_azuread"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "lvl_MicrosoftEntraID"
+        },
+        "runtimeSource": "invoker"
+      },
+      "shared_powerplatformforadmins-1": {
+        "api": {
+          "name": "shared_powerplatformforadmins"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "lvl_PowerPlatformforAdmins"
+        },
+        "runtimeSource": "invoker"
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        }
+      },
+      "triggers": {
+        "manual": {
+          "type": "Request",
+          "kind": "Button",
+          "inputs": {
+            "schema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            }
+          },
+          "metadata": {
+            "operationMetadataId": "32f95a96-22e8-4b64-9978-8e9dd9cc19ed"
+          }
+        }
+      },
+      "actions": {
+        "List_rows_-_all_Entra_Group_synced_teams": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "entityName": "teams",
+              "$select": "azureactivedirectoryobjectid,name,teamid",
+              "$filter": "(azureactivedirectoryobjectid ne null)"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+              "operationId": "ListRecords",
+              "connectionName": "shared_commondataserviceforapps"
+            }
+          },
+          "runAfter": {
+            "Select_-_group_member_id": [
+              "Succeeded"
+            ]
+          }
+        },
+        "For_each_-_Entra_security_group": {
+          "type": "Foreach",
+          "foreach": "@outputs('List_rows_-_all_Entra_Group_synced_teams')?['body/value']",
+          "actions": {
+            "Get_group_members": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "id": "@item()?['azureactivedirectoryobjectid']"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_azuread",
+                  "operationId": "GetGroupMembers",
+                  "connectionName": "shared_azuread"
+                }
+              },
+              "runtimeConfiguration": {
+                "paginationPolicy": {
+                  "minimumItemCount": 1000
+                }
+              }
+            },
+            "For_each_-_group_member": {
+              "type": "Foreach",
+              "foreach": "@outputs('Get_group_members')?['body/value']",
+              "actions": {
+                "Filter_array_-_compare_group_member_with_members_of_security_group": {
+                  "type": "Query",
+                  "inputs": {
+                    "from": "@body('Select_-_group_member_id')",
+                    "where": "@equals(items('For_each_-_group_member')?['id'],item()['id'])"
+                  }
+                },
+                "Condition_-_group_member_is_also_member_of_security_group": {
+                  "type": "If",
+                  "expression": {
+                    "and": [
+                      {
+                        "greater": [
+                          "@length(body('Filter_array_-_compare_group_member_with_members_of_security_group'))",
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "Force_Sync_user_to_dataverse": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "environment": "@outputs('Compose_-_environmentid')",
+                          "body/ObjectId": "@items('For_each_-_group_member')?['id']",
+                          "api-version": "2019-05-01"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformforadmins",
+                          "operationId": "Add-AdminPowerAppsSyncUser",
+                          "connectionName": "shared_powerplatformforadmins-1"
+                        }
+                      },
+                      "metadata": {
+                        "operationMetadataId": "18ae9f39-f0c8-4f4b-828b-ac7294c6029f"
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Filter_array_-_compare_group_member_with_members_of_security_group": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "runAfter": {
+                "Get_group_members": [
+                  "Succeeded"
+                ]
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 50
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "List_rows_-_all_Entra_Group_synced_teams": [
+              "Succeeded"
+            ]
+          },
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 50
+            }
+          }
+        },
+        "Compose_-_environmentid": {
+          "type": "Compose",
+          "inputs": "@workflow()['tags']['environmentName']",
+          "runAfter": {}
+        },
+        "For_each_-_team_member": {
+          "type": "Foreach",
+          "foreach": "@outputs('List_rows_-_all_Entra_Group_synced_teams')?['body/value']",
+          "actions": {
+            "Perform_a_bound_action_-_force_sync_of_team_members": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "entityName": "teams",
+                  "actionName": "Microsoft.Dynamics.CRM.SyncGroupMembersToTeam",
+                  "recordId": "@item()?['teamid']"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                  "operationId": "PerformBoundAction",
+                  "connectionName": "shared_commondataserviceforapps"
+                }
+              }
+            }
+          },
+          "runAfter": {
+            "For_each_-_Entra_security_group": [
+              "Succeeded"
+            ]
+          },
+          "runtimeConfiguration": {
+            "concurrency": {
+              "repetitions": 50
+            }
+          }
+        },
+        "Get_Environment_as_Admin": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "environment": "@outputs('Compose_-_environmentid')",
+              "api-version": "2018-10-01"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformforadmins",
+              "operationId": "GetSingleEnvironment",
+              "connectionName": "shared_powerplatformforadmins-1"
+            }
+          },
+          "runAfter": {
+            "Compose_-_environmentid": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Get_group_members_-_environment_security_group": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "parameters": {
+              "id": "@outputs('Get_Environment_as_Admin')?['body/properties/linkedEnvironmentMetadata/securityGroupId']"
+            },
+            "host": {
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_azuread",
+              "operationId": "GetGroupMembers",
+              "connectionName": "shared_azuread"
+            }
+          },
+          "runAfter": {
+            "Get_Environment_as_Admin": [
+              "Succeeded"
+            ]
+          },
+          "runtimeConfiguration": {
+            "paginationPolicy": {
+              "minimumItemCount": 5000
+            }
+          }
+        },
+        "Select_-_group_member_id": {
+          "type": "Select",
+          "inputs": {
+            "from": "@outputs('Get_group_members_-_environment_security_group')?['body/value']",
+            "select": {
+              "id": "@item()?['id']"
+            }
+          },
+          "runAfter": {
+            "Get_group_members_-_environment_security_group": [
+              "Succeeded"
+            ]
+          }
+        }
+      }
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}
